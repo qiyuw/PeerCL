@@ -9,6 +9,7 @@ from transformers import AutoModel, AutoTokenizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import normalize
 from typing import List, Dict, Tuple, Type, Union
+import argparse
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s', datefmt='%m/%d/%Y %H:%M:%S',
                     level=logging.INFO)
@@ -217,6 +218,10 @@ class PCL(object):
                 return pack_single_result(distance[0], idx[0])
 
 if __name__=="__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_name", help="the name or path of pre-trained model")
+    args = parser.parse_args()
+
     example_sentences = [
         'An animal is biting a persons finger.',
         'A woman is reading.',
@@ -234,7 +239,7 @@ if __name__=="__main__":
         'A woman is making a photo.'
     ]
 
-    model_name = "unsup-pcl-bert-base-uncased"
+    model_name = args.model_name
     pcl = PCL(model_name)
 
     print("\n=========Calculate cosine similarities between queries and sentences============\n")
