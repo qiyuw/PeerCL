@@ -9,7 +9,7 @@ Run the simple demo of information retrieval by `python pcl/tool.py --model_name
 TODO
 
 ## Train
-TODO
+Currently please train the model on single GPU.
 
 ## Evaluation
 TODO
