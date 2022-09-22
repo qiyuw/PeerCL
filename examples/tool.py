@@ -219,7 +219,7 @@ class PCL(object):
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", help="the name or path of pre-trained model")
+    parser.add_argument("--model_name_or_path", help="the name or path of pre-trained model")
     args = parser.parse_args()
 
     example_sentences = [
