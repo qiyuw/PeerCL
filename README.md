@@ -1,4 +1,6 @@
 # PCL: Peer-Contrastive Learning with Diverse Augmentations for Unsupervised Sentence Embeddings
+**Update: PCL has been accepted to the main conference of EMNLP 2022.**
+
 This repository includes the source codes of paper [PCL: Peer-Contrastive Learning with Diverse Augmentations for Unsupervised Sentence Embeddings](https://arxiv.org/abs/2201.12093).
 The implementation of Demo, baselines and evaluation are from [SimCSE](https://github.com/princeton-nlp/SimCSE).
 
