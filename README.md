@@ -7,10 +7,11 @@ Part of the implementation of Demo, baselines and evaluation are from [SimCSE](h
 ## Get started
 | Model List|
 |-------|
-|qiyuw/pcl-bert-base-uncased |
-|qiyuw/pcl-bert-base-uncased |
-|qiyuw/pcl-bert-base-uncased |
-|qiyuw/pcl-bert-base-uncased |
+|[qiyuw/pcl-bert-base-uncased](https://huggingface.co/qiyuw/pcl-bert-base-uncased) |
+|[qiyuw/pcl-roberta-base](https://huggingface.co/qiyuw/pcl-roberta-base) |
+|[qiyuw/pcl-bert-large-uncased](https://huggingface.co/qiyuw/pcl-bert-large-uncased) |
+|[qiyuw/pcl-roberta-large](https://huggingface.co/qiyuw/pcl-roberta-large) |
+
 Use the pre-trained model with [huggingface](https://huggingface.co/)
 
 ```
