@@ -2,16 +2,84 @@
 **Update: PCL has been accepted to the main conference of EMNLP 2022.**
 
 This repository includes the source codes of paper [PCL: Peer-Contrastive Learning with Diverse Augmentations for Unsupervised Sentence Embeddings](https://arxiv.org/abs/2201.12093).
-The implementation of Demo, baselines and evaluation are from [SimCSE](https://github.com/princeton-nlp/SimCSE).
+Part of the implementation of Demo, baselines and evaluation are from [SimCSE](https://github.com/princeton-nlp/SimCSE).
+
+## Get started
+| Model List|
+|-------|
+|qiyuw/pcl-bert-base-uncased |
+|qiyuw/pcl-bert-base-uncased |
+|qiyuw/pcl-bert-base-uncased |
+|qiyuw/pcl-bert-base-uncased |
+Use the pre-trained model with [huggingface](https://huggingface.co/)
+
+```
+import torch
+from scipy.spatial.distance import cosine
+from transformers import AutoModel, AutoTokenizer
+
+# Import our models. The package will take care of downloading the models automatically
+tokenizer = AutoTokenizer.from_pretrained("qiyuw/pcl-bert-base-uncased")
+model = AutoModel.from_pretrained("qiyuw/pcl-bert-base-uncased")
+
+# Tokenize input texts
+texts = [
+    "There's a kid on a skateboard.",
+    "A kid is skateboarding.",
+    "A kid is inside the house."
+]
+inputs = tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
+
+# Get the embeddings
+with torch.no_grad():
+    embeddings = model(**inputs, output_hidden_states=True, return_dict=True).pooler_output
+
+# Calculate cosine similarities
+# Cosine similarities are in [-1, 1]. Higher means more similar
+cosine_sim_0_1 = 1 - cosine(embeddings[0], embeddings[1])
+cosine_sim_0_2 = 1 - cosine(embeddings[0], embeddings[2])
+
+print("Cosine similarity between \"%s\" and \"%s\" is: %.3f" % (texts[0], texts[1], cosine_sim_0_1))
+print("Cosine similarity between \"%s\" and \"%s\" is: %.3f" % (texts[0], texts[2], cosine_sim_0_2))
+```
 
 ## Demo
 Run the simple demo of information retrieval by `python pcl/tool.py --model_name_or_path MODEL_NAME`. `MODEL_NAME` here can be any name or path of the well-trained model.
 
 ## Preparing data
-TODO
+Get training data by running `bash download_wiki.sh`
+
+Get evaluation data by running `bash PCL/SentEval/data/downstream/download_dataset.sh`
 
 ## Train
 Currently please train the model on single GPU.
+
+Train PCL by running
+```
+mkdir result
+
+python train.py \
+  --model_name_or_path bert-base-uncased \
+  --train_file data/wiki1m_for_simcse.txt \
+  --output_dir result \
+  --num_train_epochs 1 \
+  --per_device_train_batch_size 64 \
+  --learning_rate 3e-5 \
+  --max_seq_length 32 \
+  --evaluation_strategy steps \
+  --metric_for_best_model stsb_spearman \
+  --load_best_model_at_end \
+  --eval_steps 125 \
+  --pooler_type cls \
+  --mlp_only_train \
+  --overwrite_output_dir \
+  --temp 0.05 \
+  --do_train \
+  --do_eval \
+  --fp16 \
+  --no_extend_neg_samples \
+  "$@"
+```
 
 ## Evaluation
 Evaluate the model by `python evaluation.py --model_name_or_path MODEL_NAME --mode test --pooler cls_before_pooler`. `MODEL_NAME` here can be any name or path of the well-trained model.
