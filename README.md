@@ -45,7 +45,7 @@ print("Cosine similarity between \"%s\" and \"%s\" is: %.3f" % (texts[0], texts[
 ```
 
 ## Demo
-Run the simple demo of information retrieval by `python pcl/tool.py --model_name_or_path MODEL_NAME`. `MODEL_NAME` here can be any name or path of the well-trained model.
+Run the simple demo of information retrieval by `python pcl/tool.py --model_name_or_path qiyuw/pcl-bert-base-uncased`. `qiyuw/pcl-bert-base-uncased` here can be any name or path of the well-trained model.
 
 ## Preparing data
 Get training data by running `bash download_wiki.sh`
@@ -83,7 +83,7 @@ python train.py \
 ```
 
 ## Evaluation
-Evaluate the model by `python evaluation.py --model_name_or_path MODEL_NAME --mode test --pooler cls_before_pooler`. `MODEL_NAME` here can be any name or path of the well-trained model.
+Evaluate the model by `python evaluation.py --model_name_or_path qiyuw/pcl-bert-base-uncased --mode test --pooler cls_before_pooler`. `qiyuw/pcl-bert-base-uncased` here can be any name or path of the well-trained model.
 
 The results of unsupervised PCL on STS bencemarks are as follows:
 Model        | STS12 | STS13 | STS14 | STS15 | STS16 | STSBenchmark | SICKRelatedness |  Avg. |
