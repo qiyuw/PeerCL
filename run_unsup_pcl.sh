@@ -2,7 +2,6 @@
 
 # In this example, we show how to train PCL on unsupervised Wikipedia data.
 
-SEED=1
 DATE=$(date '+%Y%m%d%H%M')
 
 python train.py \
