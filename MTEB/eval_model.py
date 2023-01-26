@@ -21,7 +21,7 @@ class PCLforMTEB():
         inputs = self.tokenizer(sentences, padding=True, truncation=True, return_tensors="pt")
         with torch.no_grad():
             embeddings = self.model(**inputs, output_hidden_states=True, return_dict=True).pooler_output
-        return embeddings
+        return embeddings.tolist()
 
  
 if __name__ == '__main__':
