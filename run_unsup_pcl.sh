@@ -3,6 +3,7 @@
 # In this example, we show how to train PCL on unsupervised Wikipedia data.
 
 DATE=$(date '+%Y%m%d%H%M')
+SEED=1
 
 python train.py \
     --model_name_or_path bert-base-uncased \
@@ -24,5 +25,4 @@ python train.py \
     --do_eval \
     --fp16 \
     --seed "$SEED" \
-    --no_extend_neg_samples \
     "$@"
