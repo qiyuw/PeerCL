@@ -30,6 +30,7 @@ class PCLforMTEB():
             inputs = self.tokenizer(sent_batch, padding=True, truncation=True, return_tensors="pt").to(self.device)
             embeddings = self.model(**inputs, output_hidden_states=True, return_dict=True).pooler_output
             embedding_list.append(embeddings.detach().cpu().numpy())
+            torch.cuda.empty_cache()
         embeddings_all = np.concatenate(embedding_list, axis=0)
         assert embeddings_all.shape[0] == len(sentences)
         return embeddings_all
@@ -52,5 +53,5 @@ if __name__ == '__main__':
         evaluation = MTEB(task_types=task_types, task_langs=task_langs)
     else:
         evaluation = MTEB(tasks=tasks, task_langs=task_langs)
-    # evaluation.run(model, eval_splits=["test"], output_folder=f"results/{args.model}")
-    evaluation.run(model, output_folder=f"results/{args.model}", batch_size=args.bz)
+    evaluation.run(model, eval_splits=["test"], output_folder=f"results/{args.model}", batch_size=args.bz)
+    # evaluation.run(model, output_folder=f"results/{args.model}", batch_size=args.bz)
