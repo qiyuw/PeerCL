@@ -96,31 +96,19 @@ def cl_init(cls, config):
     cls.init_weights()
 
     # group wise arguments
-    cls.denoise = cls.model_args.denoise
-    cls.group_cl_loss = cls.model_args.group_cl_loss
-    cls.extend_neg_samples = cls.model_args.extend_neg_samples
+    cls.peer_coop = cls.model_args.peer_coop
+    cls.posi_cst = cls.model_args.posi_cst
 
     # temporal useless arguments
-    cls.self_denoise = cls.model_args.self_denoise
-    cls.fix_denoiser = cls.model_args.fix_denoiser
-    if not cls.self_denoise:
-        if cls.fix_denoiser:
-            cls.denoiser = AutoModel.from_pretrained("princeton-nlp/unsup-simcse-bert-base-uncased")
-        else:
-            cls.denoiser = AutoModel.from_pretrained(cls.model_args.model_name_or_path)
+    cls.fix_peer_model = cls.model_args.fix_peer_model
+    if cls.fix_peer_model:
+        cls.peer_model = AutoModel.from_pretrained("princeton-nlp/unsup-simcse-bert-base-uncased")
     else:
-        cls.denoiser = None
-    cls.relax_kl = False
-    cls.embedding_bank = None
-    cls.bank_size_multiple = 0
+        cls.peer_model = AutoModel.from_pretrained(cls.model_args.model_name_or_path)
 
-
-def get_weights(cls, z1, zs):
-    weights = cls.sim(z1.unsqueeze(1), zs) # bz, num_augs
-    weights = F.softmax(weights, dim=1)
-    return weights
 
 def get_cross_denoise_loss(cls, pooler_output, label_output):
+    # align agreement
     z1, zs = pooler_output[:, 0, :], pooler_output[:, 1:, :]
     label_z1, label_zs = label_output[:, 0, :], label_output[:, 1:, :]
     neg_cos_sim = cls.sim(z1.unsqueeze(1), label_z1.unsqueeze(0)) # bz, bz
@@ -129,29 +117,16 @@ def get_cross_denoise_loss(cls, pooler_output, label_output):
     label_neg_cos_sim = cls.sim(label_z1.unsqueeze(1), z1.unsqueeze(0)) # bz, bz
     label_neg_cos_sim = torch.tril(label_neg_cos_sim, diagonal=-1)[:,:-1] + torch.triu(label_neg_cos_sim, diagonal=1)[:,1:] # remove diag, (bz, bz-1)
     label_cos_sim = cls.sim(label_z1.unsqueeze(1), zs) # bz, num_aug
-    # smooth
-    if cls.extend_neg_samples:
-        mean = 0; std = 1; reg_size = pooler_output.size(0)*3; hidden_size = cls.config.hidden_size; 
-        reg_random = torch.normal(mean, std, size=(reg_size, hidden_size)).to(cls.device)
-        reg_random = reg_random + torch.cat([z1]*3, dim=0)
-        label_reg_random = torch.normal(mean, std, size=(reg_size, hidden_size)).to(cls.device)
-        label_reg_random = label_reg_random + torch.cat([label_z1]*3, dim=0)
-        reg_cos_sim = cls.sim(z1.unsqueeze(1), label_reg_random.unsqueeze(0))
-        cos_sim = torch.cat([cos_sim, reg_cos_sim], dim=1)
-        label_reg_cos_sim = cls.sim(label_z1.unsqueeze(1), reg_random.unsqueeze(0))
-        label_cos_sim = torch.cat([label_cos_sim, label_reg_cos_sim], dim=1)
     m = nn.LogSoftmax(dim=1)
     loss_fct = nn.KLDivLoss(reduction='none', log_target=True)
-    if cls.relax_kl:
-        loss = loss_fct(m(cos_sim), m(label_cos_sim)).mean() + loss_fct(m(neg_cos_sim), m(label_neg_cos_sim)).mean()
-    else:
-        label_cos_sim = torch.cat([label_cos_sim, label_neg_cos_sim], dim=1)
-        cos_sim = torch.cat([cos_sim, neg_cos_sim], dim=1)
-        loss = loss_fct(m(cos_sim), m(label_cos_sim)).mean()
+    label_cos_sim = torch.cat([label_cos_sim, label_neg_cos_sim], dim=1)
+    cos_sim = torch.cat([cos_sim, neg_cos_sim], dim=1)
+    loss = loss_fct(m(cos_sim), m(label_cos_sim)).mean()
     return loss
 
 
 def get_sym_kl_loss(cls, pooler_output, label_output):
+    # align embedding space
     z1, zs = pooler_output[:, 0, :], pooler_output[:, 1:, :]
     label_z1, label_zs = label_output[:, 0, :], label_output[:, 1:, :]
     neg_cos_sim = cls.sim(z1.unsqueeze(1), z1.unsqueeze(0)) # bz, bz
@@ -160,29 +135,16 @@ def get_sym_kl_loss(cls, pooler_output, label_output):
     label_neg_cos_sim = cls.sim(label_z1.unsqueeze(1), label_z1.unsqueeze(0)) # bz, bz
     label_neg_cos_sim = torch.tril(label_neg_cos_sim, diagonal=-1)[:,:-1] + torch.triu(label_neg_cos_sim, diagonal=1)[:,1:] # remove diag, (bz, bz-1)
     label_cos_sim = cls.sim(label_z1.unsqueeze(1), label_zs) # bz, num_aug
-    # smooth
-    if cls.extend_neg_samples:
-        mean = 0; std = 1; reg_size = pooler_output.size(0)*3; hidden_size = cls.config.hidden_size; 
-        reg_random = torch.normal(mean, std, size=(reg_size, hidden_size)).to(cls.device)
-        reg_random = reg_random + torch.cat([z1]*3, dim=0)
-        reg_cos_sim = cls.sim(z1.unsqueeze(1), reg_random.unsqueeze(0))
-        cos_sim = torch.cat([cos_sim, reg_cos_sim], dim=1)
-        label_reg_random = torch.normal(mean, std, size=(reg_size, hidden_size)).to(cls.device)
-        label_reg_random = label_reg_random + torch.cat([label_z1]*3, dim=0)
-        label_reg_cos_sim = cls.sim(label_z1.unsqueeze(1), label_reg_random.unsqueeze(0))
-        label_cos_sim = torch.cat([label_cos_sim, label_reg_cos_sim], dim=1)
     m = nn.LogSoftmax(dim=1)
     loss_fct = nn.KLDivLoss(reduction='none', log_target=True)
-    if cls.relax_kl:
-        loss = loss_fct(m(cos_sim), m(label_cos_sim)).mean() + loss_fct(m(neg_cos_sim), m(label_neg_cos_sim)).mean()
-    else:
-        label_cos_sim = torch.cat([label_cos_sim, label_neg_cos_sim], dim=1)
-        cos_sim = torch.cat([cos_sim, neg_cos_sim], dim=1)
-        loss = loss_fct(m(cos_sim), m(label_cos_sim)).mean()
+    label_cos_sim = torch.cat([label_cos_sim, label_neg_cos_sim], dim=1)
+    cos_sim = torch.cat([cos_sim, neg_cos_sim], dim=1)
+    loss = loss_fct(m(cos_sim), m(label_cos_sim)).mean()
     return loss
 
 
 def get_cross_kl_loss(cls, pooler_output, label_output):
+    # not used
     bsz = pooler_output.size(0)
     pooler_output_1, pooler_output_2 = pooler_output[:bsz//2], pooler_output[bsz//2:]
     label_output_1, label_output_2 = label_output[:bsz//2], label_output[bsz//2:]
@@ -207,27 +169,14 @@ def get_asym_kl_loss(cls, pooler_output, label_output):
 
 
 def get_bce_loss(cls, pooler_output):
+    # peer positive contrast
     z1, zs = pooler_output[:, 0, :], pooler_output[:, 1:, :]
     neg_cos_sim = cls.sim(z1.unsqueeze(1), z1.unsqueeze(0)) # bz, bz
     neg_cos_sim = torch.tril(neg_cos_sim, diagonal=-1)[:,:-1] + torch.triu(neg_cos_sim, diagonal=1)[:,1:] # remove diag, (bz, bz-1)
     cos_sim = cls.sim(z1.unsqueeze(1), zs) # bz, num_aug
     labels = torch.cat([torch.ones_like(cos_sim), torch.zeros_like(neg_cos_sim)], dim=1)
     cos_sim = torch.cat([cos_sim, neg_cos_sim], dim=1)
-    # smoothed
-    if cls.extend_neg_samples:
-        mean = 0; std = 1; reg_size = pooler_output.size(0)*3; hidden_size = cls.config.hidden_size;  
-        reg_random = torch.normal(mean, std, size=(reg_size, hidden_size)).to(cls.device)
-        # implementation 2
-        reg_random = reg_random + torch.cat([z1]*3, dim=0)
-        reg_cos_sim = cls.sim(z1.unsqueeze(1), reg_random.unsqueeze(0))
-        cos_sim = torch.cat([cos_sim, reg_cos_sim], dim=1)
-        labels = torch.cat([labels, torch.zeros_like(reg_cos_sim)], dim=1)
 
-    if cls.bank_size_multiple is not None and cls.bank_size_multiple > 1:
-        extra_neg_cos_sim = cls.sim(z1.unsqueeze(1), cls.embedding_bank.unsqueeze(0))
-        extra_labels = torch.zeros_like(extra_neg_cos_sim)
-        cos_sim = torch.cat([cos_sim, extra_neg_cos_sim], dim=1)
-        labels = torch.cat([labels, extra_labels], dim=1)
     m = nn.Softmax(dim=1)
     loss_fct = nn.BCEWithLogitsLoss(reduction='none')
     return loss_fct(m(cos_sim), labels).mean()
@@ -237,17 +186,6 @@ def get_simcse_loss(cls, pooler_output):
     z1, z2 = pooler_output[:, 0], pooler_output[:, 1]
     cos_sim = cls.sim(z1.unsqueeze(1), z2.unsqueeze(0))
     labels = torch.arange(cos_sim.size(0)).long().to(cls.device)
-    if cls.bank_size_multiple is not None and cls.bank_size_multiple > 1:
-        extra_sim = cls.sim(z1.unsqueeze(1), cls.embedding_bank.unsqueeze(0))
-        cos_sim = torch.cat([cos_sim, extra_sim], dim=1)
-    # smoothed
-    if cls.extend_neg_samples:
-        mean = 0; std = 1; reg_size = pooler_output.size(0)*3; hidden_size = cls.config.hidden_size;  
-        reg_random = torch.normal(mean, std, size=(reg_size, hidden_size)).to(cls.device)
-        reg_random = reg_random + torch.cat([z2]*3, dim=0)
-        #TODO reg_random + z1
-        reg_cos_sim = cls.sim(z1.unsqueeze(1), reg_random.unsqueeze(0))
-        cos_sim = torch.cat([cos_sim, reg_cos_sim], dim=1)
     loss_fct = nn.CrossEntropyLoss()
     return loss_fct(cos_sim, labels), cos_sim
     
@@ -273,13 +211,27 @@ def cl_forward(cls,
     # Number of sentences in one instance
     # 2: pair instance; 3: multiple augmentation
     num_sent = input_ids.size(1)
+    if cls.peer_coop:
+        num_aug = (num_sent - 2) // 2
+        assert num_aug * 2 + 2 == num_sent, "should be two original sentences, and num_aug * 2 augmented sentences."
+        peer_input_ids = torch.cat([input_ids[:, :2, :],input_ids[:, num_aug+2:, :]], axis=1)
+        input_ids = input_ids[:, :num_aug+2, :]
+        peer_attention_mask = torch.cat([attention_mask[:, :2, :],attention_mask[:, num_aug+2:, :]], axis=1)
+        attention_mask = attention_mask[:, :num_aug+2, :]
+        if token_type_ids is not None:
+            peer_token_type_ids = torch.cat([token_type_ids[:, :2, :],token_type_ids[:, num_aug+2:, :]], axis=1)
+            token_type_ids = token_type_ids[:, :num_aug+2, :]
+        num_sent = num_aug + 2
 
     mlm_outputs = None
     # Flatten input for encoding
-    input_ids = input_ids.view((-1, input_ids.size(-1))) # (bs * num_sent, len)
-    attention_mask = attention_mask.view((-1, attention_mask.size(-1))) # (bs * num_sent len)
+    input_ids = input_ids.reshape((-1, input_ids.size(-1))) # (bs * num_sent, len)
+    peer_input_ids = peer_input_ids.reshape((-1, peer_input_ids.size(-1)))
+    attention_mask = attention_mask.reshape((-1, attention_mask.size(-1))) # (bs * num_sent len)
+    peer_attention_mask = peer_attention_mask.reshape((-1, peer_attention_mask.size(-1)))
     if token_type_ids is not None:
-        token_type_ids = token_type_ids.view((-1, token_type_ids.size(-1))) # (bs * num_sent, len)
+        token_type_ids = token_type_ids.reshape((-1, token_type_ids.size(-1))) # (bs * num_sent, len)
+        peer_token_type_ids = peer_token_type_ids.reshape((-1, token_type_ids.size(-1)))
 
     # Get raw embeddings
     outputs = encoder(
@@ -293,40 +245,23 @@ def cl_forward(cls,
         output_hidden_states=True if cls.model_args.pooler_type in ['avg_top2', 'avg_first_last'] else False,
         return_dict=True,
     )
-    if cls.denoise:
-        if cls.self_denoise:
-            label_output = encoder(
-                input_ids,
-                attention_mask=attention_mask,
-                token_type_ids=token_type_ids,
-                position_ids=position_ids,
-                head_mask=head_mask,
-                inputs_embeds=inputs_embeds,
-                output_attentions=output_attentions,
-                output_hidden_states=True if cls.model_args.pooler_type in ['avg_top2', 'avg_first_last'] else False,
-                return_dict=True,
-            )
-            label_output = cls.pooler(attention_mask, label_output)
-            label_output = label_output.view((batch_size, num_sent, label_output.size(-1))) # (bs, num_sent, hidden)
-            if cls.pooler_type == "cls":
-                    label_output = cls.mlp(label_output)
-        else:
-            if cls.fix_denoiser:
-                with torch.no_grad():
-                    label_output = cls.denoiser(input_ids)['pooler_output']
-                    label_output = label_output.view((batch_size, num_sent, label_output.size(-1))) # (bs, num_sent, hidden)
-                    if cls.pooler_type == "cls":
-                        label_output = cls.mlp(label_output)
-            else:
-                label_output = cls.denoiser(input_ids)['pooler_output']
+    if cls.peer_coop:
+        if cls.fix_peer_model:
+            with torch.no_grad():
+                label_output = cls.peer_model(peer_input_ids)['pooler_output']
                 label_output = label_output.view((batch_size, num_sent, label_output.size(-1))) # (bs, num_sent, hidden)
                 if cls.pooler_type == "cls":
                     label_output = cls.mlp(label_output)
+        else:
+            label_output = cls.peer_model(peer_input_ids)['pooler_output']
+            label_output = label_output.view((batch_size, num_sent, label_output.size(-1))) # (bs, num_sent, hidden)
+            if cls.pooler_type == "cls":
+                label_output = cls.mlp(label_output)
     else:
         label_output = None
         
     # MLM auxiliary objective
-    if False and mlm_input_ids is not None:
+    if mlm_input_ids is not None:
         mlm_input_ids = mlm_input_ids.view((-1, mlm_input_ids.size(-1)))
         mlm_outputs = encoder(
             mlm_input_ids,
@@ -395,37 +330,25 @@ def cl_forward(cls,
     #     cos_sim = cos_sim + weights
 
     # Calculate loss for MLM
-    if False and mlm_outputs is not None and mlm_labels is not None:
+    if mlm_outputs is not None and mlm_labels is not None:
         mlm_labels = mlm_labels.view(-1, mlm_labels.size(-1))
         prediction_scores = cls.lm_head(mlm_outputs.last_hidden_state)
         masked_lm_loss = loss_fct(prediction_scores.view(-1, cls.config.vocab_size), mlm_labels.view(-1))
         loss = loss + cls.model_args.mlm_weight * masked_lm_loss
-
-    # update embedding bank
-    bsm = cls.bank_size_multiple
-    bsz = pooler_output.size(0)
-    if cls.bank_size_multiple is not None and bsm > 1:
-        if cls.embedding_bank is None:
-            cls.embedding_bank = pooler_output[:, 0, :].detach()
-        elif bsm * bsz > cls.embedding_bank.size(0):
-            cls.embedding_bank = torch.cat([cls.embedding_bank, pooler_output[:, 0, :].detach()])
-        else:
-            cls.embedding_back = torch.cat([cls.embedding_bank[bsz:], pooler_output[:, 0, :].detach()])
-        cls.embedding_bank.require_grad = False
     
-    if cls.denoise:
+    if cls.peer_coop:
         kl_loss = get_cross_denoise_loss(cls, pooler_output, label_output) + get_sym_kl_loss(cls, pooler_output, label_output)
     simcse_loss, cos_sim = get_simcse_loss(cls, pooler_output)
-    if cls.denoise:
+    if cls.peer_coop:
         loss = simcse_loss + kl_loss 
     else:
         loss = simcse_loss
-    if cls.group_cl_loss:
+    if cls.posi_cst:
         bce_loss = get_bce_loss(cls, pooler_output)
         loss += bce_loss 
-    if not cls.fix_denoiser and cls.denoise:
+    if not cls.fix_peer_model and cls.peer_coop:
         denoiser_loss = get_simcse_loss(cls, label_output)[0]
-        if cls.group_cl_loss:
+        if cls.posi_cst:
             denoiser_loss += get_bce_loss(cls, label_output)
         loss += denoiser_loss
 

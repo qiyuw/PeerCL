@@ -130,34 +130,22 @@ class ModelArguments:
             "help": "Multipe augmentations choices"
         }
     )
-    group_cl_loss: bool = field(
+    posi_cst: bool = field(
         default=True,
         metadata={
-            "help": "Use group wise contrastive learning loss"
+            "help": "Use peer positive contrast"
         }
     )
-    denoise: bool = field(
+    peer_coop: bool = field(
         default=True,
         metadata={
-            "help": "Use denoiser"
+            "help": "Use peer cooperation networks"
         }
     )
-    self_denoise: bool = field(
+    fix_peer_model: bool = field(
         default=False,
         metadata={
-            "help": "Use denoiser"
-        }
-    )
-    extend_neg_samples: bool = field(
-        default=True,
-        metadata={
-            "help": "Extend negative embeddings using gaussian noises"
-        }
-    )
-    fix_denoiser: bool = field(
-        default=False,
-        metadata={
-            "help": "Fix the parameters of the denoiser"
+            "help": "Fix the parameters of one of the peer networkss"
         }
     )
 
@@ -518,6 +506,23 @@ def main():
                     features = self.dropout_aug(features)
                 else:
                     raise ValueError
+
+            # duplicate augs for peer cooperative network
+            if model_args.peer_coop:
+                num_augs = len(augs)
+                for a in augs:
+                    if a == 'sf':
+                        features = self.shuffle_aug(features)
+                    elif a == 'rv':
+                        features = self.reverse_aug(features)
+                    elif a == 'de':
+                        features = self.deletion_aug(features)
+                    elif a == 'rp':
+                        features = self.repetition_aug(features)
+                    elif a == 'dp':            
+                        features = self.dropout_aug(features)
+                    else:
+                        raise ValueError
 
             if bs > 0:
                 num_sent = len(features[0]['input_ids'])
