@@ -1,0 +1,1 @@
+Run `pip install mteb` in a **different** enviroment, otherwise it will contradict with the environment for pcl.
