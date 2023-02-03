@@ -78,7 +78,6 @@ python train.py \
   --do_train \
   --do_eval \
   --fp16 \
-  --no_extend_neg_samples \
   "$@"
 ```
 
