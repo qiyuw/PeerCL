@@ -223,6 +223,12 @@ def cl_forward(cls,
             token_type_ids = token_type_ids[:, :num_aug+2, :]
         num_sent = num_aug + 2
 
+    # Test, use same input for two networks, reduce the difference only with the randomness within the model.
+    if True:
+        peer_input_ids = input_ids
+        peer_attention_mask = attention_mask
+        peer_token_type_ids = token_type_ids
+
     mlm_outputs = None
     # Flatten input for encoding
     input_ids = input_ids.reshape((-1, input_ids.size(-1))) # (bs * num_sent, len)
