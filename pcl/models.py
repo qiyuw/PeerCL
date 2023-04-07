@@ -206,22 +206,15 @@ def cl_forward(cls,
     mlm_labels=None,
 ):
     return_dict = return_dict if return_dict is not None else cls.config.use_return_dict
-    ori_input_ids = input_ids
     batch_size = input_ids.size(0)
     # Number of sentences in one instance
     # 2: pair instance; 3: multiple augmentation
     num_sent = input_ids.size(1)
-    if cls.peer_coop:
-        num_aug = (num_sent - 2) // 2
-        assert num_aug * 2 + 2 == num_sent, "should be two original sentences, and num_aug * 2 augmented sentences."
-        peer_input_ids = torch.cat([input_ids[:, :2, :],input_ids[:, num_aug+2:, :]], axis=1)
-        input_ids = input_ids[:, :num_aug+2, :]
-        peer_attention_mask = torch.cat([attention_mask[:, :2, :],attention_mask[:, num_aug+2:, :]], axis=1)
-        attention_mask = attention_mask[:, :num_aug+2, :]
-        if token_type_ids is not None:
-            peer_token_type_ids = torch.cat([token_type_ids[:, :2, :],token_type_ids[:, num_aug+2:, :]], axis=1)
-            token_type_ids = token_type_ids[:, :num_aug+2, :]
-        num_sent = num_aug + 2
+
+    # placeholder for future improvement
+    peer_input_ids = input_ids
+    peer_attention_mask = attention_mask
+    peer_token_type_ids = token_type_ids
 
     mlm_outputs = None
     # Flatten input for encoding

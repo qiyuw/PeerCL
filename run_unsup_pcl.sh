@@ -10,7 +10,7 @@ python train.py \
     --train_file data/wiki1m_for_simcse.txt \
     --output_dir result/unsup-bert \
     --num_train_epochs 1 \
-    --per_device_train_batch_size 16 \
+    --per_device_train_batch_size 256 \
     --learning_rate 3e-5 \
     --max_seq_length 32 \
     --evaluation_strategy steps \
