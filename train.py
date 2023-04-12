@@ -507,23 +507,6 @@ def main():
                 else:
                     raise ValueError
 
-            # duplicate augs for peer cooperative network
-            if model_args.peer_coop:
-                num_augs = len(augs)
-                for a in augs:
-                    if a == 'sf':
-                        features = self.shuffle_aug(features)
-                    elif a == 'rv':
-                        features = self.reverse_aug(features)
-                    elif a == 'de':
-                        features = self.deletion_aug(features)
-                    elif a == 'rp':
-                        features = self.repetition_aug(features)
-                    elif a == 'dp':            
-                        features = self.dropout_aug(features)
-                    else:
-                        raise ValueError
-
             if bs > 0:
                 num_sent = len(features[0]['input_ids'])
             else:
