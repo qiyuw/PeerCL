@@ -106,11 +106,24 @@ def cl_init(cls, config):
     else:
         cls.peer_model = AutoModel.from_pretrained(cls.model_args.model_name_or_path)
 
+    cls.sup_or_unsup = cls.model_args.sup_or_unsup
+    cls.use_negative = cls.model_args.use_negative
+    cls.use_xnli = cls.model_args.use_xnli
 
+# calculate loss with positive samples 
 def get_cross_denoise_loss(cls, pooler_output, label_output):
     # align agreement
-    z1, zs = pooler_output[:, 0, :], pooler_output[:, 1:, :]
-    label_z1, label_zs = label_output[:, 0, :], label_output[:, 1:, :]
+    if cls.sup_or_unsup == 'sup' and cls.use_negative == True:
+        z1, z2, zn, zs = pooler_output[:, 0, :], pooler_output[:, 1, :], pooler_output[:, 2, :], pooler_output[:, 3:, :]
+        z2 = z2.unsqueeze(1)
+        zs = torch.cat([z2, zs], dim=1)
+        label_z1, label_z2, label_zs = label_output[:, 0, :], label_output[:, 1, :], label_output[:, 3:, :]
+        label_z2 = label_z2.unsqueeze(1)
+        label_zs = torch.cat([label_z2, label_zs], dim=1)
+    else:
+        z1, zs = pooler_output[:, 0, :], pooler_output[:, 1:, :]
+        label_z1, label_zs = label_output[:, 0, :], label_output[:, 1:, :]
+    
     neg_cos_sim = cls.sim(z1.unsqueeze(1), label_z1.unsqueeze(0)) # bz, bz
     neg_cos_sim = torch.tril(neg_cos_sim, diagonal=-1)[:,:-1] + torch.triu(neg_cos_sim, diagonal=1)[:,1:] # remove diag, (bz, bz-1)
     cos_sim = cls.sim(z1.unsqueeze(1), label_zs) # bz, num_aug
@@ -127,8 +140,17 @@ def get_cross_denoise_loss(cls, pooler_output, label_output):
 
 def get_sym_kl_loss(cls, pooler_output, label_output):
     # align embedding space
-    z1, zs = pooler_output[:, 0, :], pooler_output[:, 1:, :]
-    label_z1, label_zs = label_output[:, 0, :], label_output[:, 1:, :]
+    if cls.sup_or_unsup == 'sup' and cls.use_negative == True:
+        z1, z2, zn, zs = pooler_output[:, 0, :], pooler_output[:, 1, :], pooler_output[:, 2, :], pooler_output[:, 3:, :]
+        z2 = z2.unsqueeze(1)
+        zs = torch.cat([z2, zs], dim=1)
+        label_z1, label_z2, label_zs = label_output[:, 0, :], label_output[:, 1, :], label_output[:, 3:, :]
+        label_z2 = label_z2.unsqueeze(1)
+        label_zs = torch.cat([label_z2, label_zs], dim=1)
+    else:
+        z1, zs = pooler_output[:, 0, :], pooler_output[:, 1:, :]
+        label_z1, label_zs = label_output[:, 0, :], label_output[:, 1:, :]
+        
     neg_cos_sim = cls.sim(z1.unsqueeze(1), z1.unsqueeze(0)) # bz, bz
     neg_cos_sim = torch.tril(neg_cos_sim, diagonal=-1)[:,:-1] + torch.triu(neg_cos_sim, diagonal=1)[:,1:] # remove diag, (bz, bz-1)
     cos_sim = cls.sim(z1.unsqueeze(1), zs) # bz, num_aug
@@ -142,7 +164,7 @@ def get_sym_kl_loss(cls, pooler_output, label_output):
     loss = loss_fct(m(cos_sim), m(label_cos_sim)).mean()
     return loss
 
-
+'''
 def get_cross_kl_loss(cls, pooler_output, label_output):
     # not used
     bsz = pooler_output.size(0)
@@ -166,11 +188,16 @@ def get_asym_kl_loss(cls, pooler_output, label_output):
     m = nn.LogSoftmax(dim=1)
     loss_fct = nn.KLDivLoss(reduction='none', log_target=True)
     return loss_fct(m(cos_sim), m(label_cos_sim)).mean()
-
+'''
 
 def get_bce_loss(cls, pooler_output):
     # peer positive contrast
-    z1, zs = pooler_output[:, 0, :], pooler_output[:, 1:, :]
+    if cls.sup_or_unsup == 'sup' and cls.use_negative == True:
+        z1, z2, zn, zs = pooler_output[:, 0, :], pooler_output[:, 1, :], pooler_output[:, 2, :], pooler_output[:, 3:, :]
+        z2 = z2.unsqueeze(1)
+        zs = torch.cat([z2, zs], dim=1)
+    else:
+        z1, zs = pooler_output[:, 0, :], pooler_output[:, 1:, :]
     neg_cos_sim = cls.sim(z1.unsqueeze(1), z1.unsqueeze(0)) # bz, bz
     neg_cos_sim = torch.tril(neg_cos_sim, diagonal=-1)[:,:-1] + torch.triu(neg_cos_sim, diagonal=1)[:,1:] # remove diag, (bz, bz-1)
     cos_sim = cls.sim(z1.unsqueeze(1), zs) # bz, num_aug
@@ -185,8 +212,18 @@ def get_bce_loss(cls, pooler_output):
 def get_simcse_loss(cls, pooler_output):
     z1, z2 = pooler_output[:, 0], pooler_output[:, 1]
     cos_sim = cls.sim(z1.unsqueeze(1), z2.unsqueeze(0))
+    if cls.use_negative:
+        z3 = pooler_output[:, 2]
+        z1_z3_cos = cls.sim(z1.unsqueeze(1), z3.unsqueeze(0))
+        cos_sim = torch.cat([cos_sim, z1_z3_cos], 1)
     labels = torch.arange(cos_sim.size(0)).long().to(cls.device)
     loss_fct = nn.CrossEntropyLoss()
+    if cls.use_negative:
+        z3_weight = cls.model_args.hard_negative_weight
+        weights = torch.tensor(
+            [[0.0] * (cos_sim.size(-1) - z1_z3_cos.size(-1)) + [0.0] * i + [z3_weight] + [0.0] * (z1_z3_cos.size(-1) - i - 1) for i in range(z1_z3_cos.size(-1))]
+        ).to(cls.device)
+        cos_sim = cos_sim + weights
     return loss_fct(cos_sim, labels), cos_sim
     
 

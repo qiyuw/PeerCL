@@ -148,6 +148,25 @@ class ModelArguments:
             "help": "Fix the parameters of one of the peer networkss"
         }
     )
+    sup_or_unsup: Optional[str] = field(
+        default='unsup',
+        metadata={
+            "help": "run in unsupervised data or supervised data"
+            "Don't set if you want to train a model from scratch."
+        },
+    )
+    use_negative: bool = field(
+        default=False,
+        metadata={
+            "help": "Use nagative data or not"
+        }
+    )
+    use_xnli:bool = field(
+        default=False,
+        metadata={
+            "help": "Use mix-augmented data or not"
+        }
+    )  
 
 
 @dataclass
