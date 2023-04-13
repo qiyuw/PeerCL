@@ -8,6 +8,7 @@ import transformers
 from transformers import RobertaTokenizer, AutoModel, AutoConfig
 from transformers.models.roberta.modeling_roberta import RobertaPreTrainedModel, RobertaModel, RobertaLMHead
 from transformers.models.bert.modeling_bert import BertPreTrainedModel, BertModel, BertLMPredictionHead
+from transformers.models.xlm_roberta.modeling_xlm_roberta import XLMRobertaModel
 from transformers.activations import gelu
 from transformers.file_utils import (
     add_code_sample_docstrings,
@@ -109,17 +110,14 @@ def cl_init(cls, config):
     cls.sup_or_unsup = cls.model_args.sup_or_unsup
     cls.use_negative = cls.model_args.use_negative
     cls.use_xnli = cls.model_args.use_xnli
+    cls.use_wmt = cls.model_args.use_wmt
 
-# calculate loss with positive samples 
+# calculate denoise loss between two networks (pooler and label)
 def get_cross_denoise_loss(cls, pooler_output, label_output):
     # align agreement
-    if cls.sup_or_unsup == 'sup' and cls.use_negative == True:
-        z1, z2, zn, zs = pooler_output[:, 0, :], pooler_output[:, 1, :], pooler_output[:, 2, :], pooler_output[:, 3:, :]
-        z2 = z2.unsqueeze(1)
-        zs = torch.cat([z2, zs], dim=1)
-        label_z1, label_z2, label_zs = label_output[:, 0, :], label_output[:, 1, :], label_output[:, 3:, :]
-        label_z2 = label_z2.unsqueeze(1)
-        label_zs = torch.cat([label_z2, label_zs], dim=1)
+    if cls.use_wmt == True:
+        z1, zs = pooler_output[:, 0, :], pooler_output[:, 1:, :]
+        label_z1, label_zs = label_output[:, 0, :], label_output[:, 1:, :]
     else:
         z1, zs = pooler_output[:, 0, :], pooler_output[:, 1:, :]
         label_z1, label_zs = label_output[:, 0, :], label_output[:, 1:, :]
@@ -137,16 +135,12 @@ def get_cross_denoise_loss(cls, pooler_output, label_output):
     loss = loss_fct(m(cos_sim), m(label_cos_sim)).mean()
     return loss
 
-
+# calculate kl loss between two networks (pooler and label)
 def get_sym_kl_loss(cls, pooler_output, label_output):
     # align embedding space
-    if cls.sup_or_unsup == 'sup' and cls.use_negative == True:
-        z1, z2, zn, zs = pooler_output[:, 0, :], pooler_output[:, 1, :], pooler_output[:, 2, :], pooler_output[:, 3:, :]
-        z2 = z2.unsqueeze(1)
-        zs = torch.cat([z2, zs], dim=1)
-        label_z1, label_z2, label_zs = label_output[:, 0, :], label_output[:, 1, :], label_output[:, 3:, :]
-        label_z2 = label_z2.unsqueeze(1)
-        label_zs = torch.cat([label_z2, label_zs], dim=1)
+    if cls.use_wmt == True:
+        z1, zs = pooler_output[:, 0, :], pooler_output[:, 1:, :]
+        label_z1, label_zs = label_output[:, 0, :], label_output[:, 1:, :]
     else:
         z1, zs = pooler_output[:, 0, :], pooler_output[:, 1:, :]
         label_z1, label_zs = label_output[:, 0, :], label_output[:, 1:, :]
@@ -193,13 +187,18 @@ def get_asym_kl_loss(cls, pooler_output, label_output):
 def get_bce_loss(cls, pooler_output):
     # peer positive contrast
     if cls.sup_or_unsup == 'sup' and cls.use_negative == True:
-        z1, z2, zn, zs = pooler_output[:, 0, :], pooler_output[:, 1, :], pooler_output[:, 2, :], pooler_output[:, 3:, :]
+        z1, z2, z3, zs = pooler_output[:, 0, :], pooler_output[:, 1, :], pooler_output[:, 2, :], pooler_output[:, 3:, :]
         z2 = z2.unsqueeze(1)
         zs = torch.cat([z2, zs], dim=1)
+    elif cls.use_wmt == True:
+        z1, zs = pooler_output[:, 0, :], pooler_output[:, 1:, :]
     else:
         z1, zs = pooler_output[:, 0, :], pooler_output[:, 1:, :]
     neg_cos_sim = cls.sim(z1.unsqueeze(1), z1.unsqueeze(0)) # bz, bz
     neg_cos_sim = torch.tril(neg_cos_sim, diagonal=-1)[:,:-1] + torch.triu(neg_cos_sim, diagonal=1)[:,1:] # remove diag, (bz, bz-1)
+    if cls.sup_or_unsup == 'sup' and cls.use_negative == True:
+        hard_neg_cos_sim = cls.sim(z1.unsqueeze(1), z3.unsqueeze(0))
+        neg_cos_sim = torch.cat([neg_cos_sim, hard_neg_cos_sim], dim=1)
     cos_sim = cls.sim(z1.unsqueeze(1), zs) # bz, num_aug
     labels = torch.cat([torch.ones_like(cos_sim), torch.zeros_like(neg_cos_sim)], dim=1)
     cos_sim = torch.cat([cos_sim, neg_cos_sim], dim=1)
@@ -371,9 +370,15 @@ def cl_forward(cls,
         kl_loss = get_cross_denoise_loss(cls, pooler_output, label_output) + get_sym_kl_loss(cls, pooler_output, label_output)
     simcse_loss, cos_sim = get_simcse_loss(cls, pooler_output)
     if cls.peer_coop:
-        loss = simcse_loss + kl_loss 
+        if cls.sup_or_unsup == 'unsup':
+            loss = simcse_loss + kl_loss
+        else:
+            loss = 1*simcse_loss + kl_loss
     else:
-        loss = simcse_loss
+        if cls.sup_or_unsup == 'unsup':
+            loss = simcse_loss
+        else:
+            loss = 1*simcse_loss
     if cls.posi_cst:
         bce_loss = get_bce_loss(cls, pooler_output)
         loss += bce_loss 
@@ -538,6 +543,122 @@ class RobertaForCL(RobertaPreTrainedModel):
             )
         else:
             return cl_forward(self, self.roberta,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                position_ids=position_ids,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
+                labels=labels,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                mlm_input_ids=mlm_input_ids,
+                mlm_labels=mlm_labels,
+            )
+
+
+class XLMRForCL(XLMRobertaModel):
+    _keys_to_ignore_on_load_missing = [r"position_ids"]
+
+    def __init__(self, config, *model_args, **model_kargs):
+        super().__init__(config)
+        self.model_args = model_kargs["model_args"]
+        self.roberta = XLMRobertaModel(config, add_pooling_layer=False)
+
+        if self.model_args.do_mlm:
+            self.lm_head = RobertaLMHead(config)
+
+        cl_init(self, config)
+
+    def forward(self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        labels=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+        sent_emb=False,
+        mlm_input_ids=None,
+        mlm_labels=None,
+    ):
+        if sent_emb:
+            return sentemb_forward(self, self.roberta,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                position_ids=position_ids,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
+                labels=labels,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+            )
+        else:
+            return cl_forward(self, self.roberta,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                position_ids=position_ids,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
+                labels=labels,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                mlm_input_ids=mlm_input_ids,
+                mlm_labels=mlm_labels,
+            )
+
+
+class LaBSEForCL(BertPreTrainedModel):
+    _keys_to_ignore_on_load_missing = [r"position_ids"]
+
+    def __init__(self, config, *model_args, **model_kargs):
+        super().__init__(config)
+        self.model_args = model_kargs["model_args"]
+        self.bert = BertModel(config, add_pooling_layer=False)
+
+        if self.model_args.do_mlm:
+            self.lm_head = BertLMPredictionHead(config)
+
+        cl_init(self, config)
+
+    def forward(self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        labels=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+        sent_emb=False,
+        mlm_input_ids=None,
+        mlm_labels=None,
+    ):
+        if sent_emb:
+            return sentemb_forward(self, self.bert,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                position_ids=position_ids,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
+                labels=labels,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+            )
+        else:
+            return cl_forward(self, self.bert,
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 token_type_ids=token_type_ids,
