@@ -104,10 +104,15 @@ roberta-large| 84.49 | 89.06 | 94.67 | 89.26 | 89.07 | 94.20 | 74.90 | 87.95 |
 Cite our paper if PCL helps your work:
 
 ```bibtex
-@article{wu2022pcl,
-  title={PCL: Peer-Contrastive Learning with Diverse Augmentations for Unsupervised Sentence Embeddings},
-  author={Wu, Qiyu and Tao, Chongyang and Shen, Tao and Xu, Can and Geng, Xiubo and Jiang, Daxin},
-  journal={arXiv preprint arXiv:2201.12093},
-  year={2022}
+@inproceedings{wu-etal-2022-pcl,
+    title = "{PCL}: Peer-Contrastive Learning with Diverse Augmentations for Unsupervised Sentence Embeddings",
+    author = "Wu, Qiyu  and Tao, Chongyang  and Shen, Tao  and Xu, Can  and Geng, Xiubo  and Jiang, Daxin",
+    booktitle = "Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing",
+    month = dec,
+    year = "2022",
+    address = "Abu Dhabi, United Arab Emirates",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2022.emnlp-main.826",
+    pages = "12052--12066",
 }
 ```
